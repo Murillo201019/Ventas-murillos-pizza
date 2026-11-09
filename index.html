@@ -246,6 +246,13 @@
         .brand h1{font-size:19px}
         .btn-install-top{padding:7px 11px;font-size:13px}
       }
+      @media print{
+        body{background:#fff}
+        .wrap{max-width:100%;padding:0 0 16px}
+        .bottomnav,#installArea,.tabs,.btn-lock,.btn-install-top,.period-nav,.toast,.modal-back,.no-print{display:none !important}
+        .card,.oven,.stat{box-shadow:none;break-inside:avoid}
+        .oven .big{font-size:36px}
+      }
     </style>
   </head>
   <body>

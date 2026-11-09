@@ -273,12 +273,88 @@
     }
 
     /* ================= vista del vendedor ================= */
-    var seller = { kind: "entera", cart: [], payment: "efectivo", editingPrice: -1, priceText: "", message: null, error: null, busy: false };
+    var seller = { kind: "entera", cart: [], payment: "efectivo", editingPrice: -1, priceText: "", message: null, error: null, busy: false,
+      cut: { openAmount: "500", counted: "", err: null } };
     function cartTotal() { return seller.cart.reduce(function (a, l) { return a + l.unitPriceCents * l.qty; }, 0); }
     function cartCommission() { return seller.payment === "tarjeta" ? Math.round(cartTotal() * 0.032 * 1.16) : 0; }
     function todaySales() {
       var t = todayStr();
       return state.sales.filter(function (s) { return s.saleDate === t && !s.voided; });
+    }
+    /* Caja del día para el vendedor: la misma caja que ve el administrador */
+    function sellerCajaHTML() {
+      var today = todayStr();
+      var cut = cutForDate(today);
+      var day = cutDayTotals(today);
+      var c = seller.cut;
+      var h = '<section class="card"><h3>Caja de hoy · ' + esc(prettyDate(today)) + "</h3>";
+      if (!cut) {
+        h += '<p style="font-size:14px;color:var(--dim);margin:6px 0 0">Antes de vender, abre la caja con el fondo inicial en efectivo.</p>' +
+          '<div style="display:grid;gap:12px;margin-top:12px">' +
+          '<label class="field"><span>Fondo inicial en efectivo ($)</span><input class="input" id="sellCutOpen" inputmode="decimal" value="' + esc(c.openAmount) + '" placeholder="500" aria-label="Fondo inicial en efectivo"></label>';
+        if (c.err) h += '<p class="err" role="alert" style="text-align:left;margin:0">' + esc(c.err) + "</p>";
+        h += '<button type="button" class="btn" id="sellCutOpenBtn" style="width:100%">Abrir caja</button></div>';
+        if (day.count > 0) h += '<p class="hint">Ya hay ' + day.count + ' venta(s) registrada(s) hoy por ' + money(day.totalCents, true) + " sin caja abierta.</p>";
+      } else {
+        var expected = expectedCash(cut);
+        h += '<ul class="kv">' +
+          "<li><span>Fondo inicial</span><span class=\"v tnum\">" + money(cut.openCents, true) + "</span></li>" +
+          "<li><span>Ventas de hoy</span><span class=\"v tnum\">" + money(day.totalCents, true) + " (" + day.count + ")</span></li>" +
+          "<li><span>Efectivo en caja</span><span class=\"v tnum\">" + money(day.cashCents, true) + "</span></li>" +
+          "<li><span>Efectivo esperado</span><span class=\"v tnum\">" + money(expected, true) + "</span></li>";
+        if (cut.status === "cerrada" && cut.countedCents != null) {
+          var diff = cut.countedCents - expected;
+          h += "<li><span>Efectivo contado</span><span class=\"v tnum\">" + money(cut.countedCents, true) + "</span></li>" +
+            '<li><span>Diferencia</span><span class="v tnum" style="color:' + (diff >= 0 ? "var(--green)" : "var(--accent)") + '">' + money(diff, true) + " " + (diff > 0 ? "· sobrante" : diff < 0 ? "· faltante" : "· exacto") + "</span></li>";
+        }
+        h += "</ul>";
+        if (cut.status === "abierta") {
+          h += '<div style="display:grid;gap:12px;margin-top:12px">' +
+            '<label class="field"><span>Efectivo contado al cierre ($) — opcional</span><input class="input" id="sellCutCounted" inputmode="decimal" value="' + esc(c.counted) + '" placeholder="Ej. 680" aria-label="Efectivo contado al cierre"></label>';
+          if (c.err) h += '<p class="err" role="alert" style="text-align:left;margin:0">' + esc(c.err) + "</p>";
+          h += '<button type="button" class="btn" id="sellCutCloseBtn" style="width:100%">Cerrar caja</button></div>';
+        } else {
+          h += '<p class="hint" style="margin-top:10px">Caja cerrada. Si hay un error, el administrador puede reabrirla en Administrador → Caja.</p>' +
+            '<button type="button" class="btn btn-ghost" id="sellCutReopenBtn" style="width:100%;margin-top:8px">Reabrir caja</button>';
+        }
+      }
+      h += "</section>";
+      return h;
+    }
+    function openCutSeller() {
+      var c = seller.cut;
+      var today = todayStr();
+      var openCents = toCents($("sellCutOpen").value);
+      c.err = null;
+      if (cutForDate(today)) c.err = "La caja de hoy ya está abierta.";
+      else if (openCents === null || openCents < 0) c.err = "Escribe el fondo inicial en efectivo (puede ser 0).";
+      if (c.err) { renderSeller(); return; }
+      state.cashCuts.push({ id: nid(), date: today, openCents: openCents, status: "abierta", countedCents: null, closedAt: null });
+      c.openAmount = "500"; c.counted = "";
+      saveState(); renderSeller();
+      toast("Caja abierta con fondo de " + money(openCents, true) + ".");
+    }
+    function closeCutSeller() {
+      var c = seller.cut;
+      var cut = cutForDate(todayStr());
+      if (!cut || cut.status !== "abierta") return;
+      var countedText = $("sellCutCounted").value.trim();
+      var counted = countedText === "" ? null : toCents(countedText);
+      c.err = null;
+      if (counted === null && countedText !== "") c.err = "Revisa el efectivo contado.";
+      if (c.err) { renderSeller(); return; }
+      cut.status = "cerrada"; cut.countedCents = counted; cut.closedAt = Date.now();
+      c.counted = "";
+      saveState(); renderSeller();
+      var expected = expectedCash(cut);
+      toast(counted == null ? "Caja cerrada." : (counted === expected ? "Caja cerrada. Efectivo exacto." : counted > expected ? "Caja cerrada. Sobran " + money(counted - expected, true) + "." : "Caja cerrada. Faltan " + money(expected - counted, true) + "."));
+    }
+    function reopenCutSeller() {
+      var cut = cutForDate(todayStr());
+      if (!cut) return;
+      cut.status = "abierta"; cut.countedCents = null; cut.closedAt = null;
+      saveState(); renderSeller();
+      toast("Caja reabierta.");
     }
     function renderSeller() {
       var el = $("viewVender");
@@ -289,6 +365,7 @@
       var html = "";
       html += '<section class="oven"><p class="sub">Vendido hoy · ' + esc(prettyDate(todayStr())) + " · " + ts.length + (ts.length === 1 ? " venta" : " ventas") + '</p>' +
         '<p class="big tnum">' + money(todayRev, true) + "</p></section>";
+      html += sellerCajaHTML();
       html += '<div class="seg" role="group" aria-label="Tipo de venta">' +
         '<button type="button" data-kind="entera" aria-pressed="' + (kind === "entera") + '">' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="9" r="1" fill="currentColor" stroke="none"/><circle cx="13" cy="14.5" r="1" fill="currentColor" stroke="none"/></svg>' +
@@ -384,6 +461,17 @@
       var cobrar = $("btnCobrar"); if (cobrar) cobrar.addEventListener("click", checkout);
       var vaciar = $("btnVaciar");
       if (vaciar) vaciar.addEventListener("click", function () { seller.cart = []; ui.salePin = null; seller.error = null; seller.editingPrice = -1; renderSeller(); });
+      /* caja del día (vendedor) */
+      var scOpen = $("sellCutOpen");
+      if (scOpen) scOpen.addEventListener("input", function () { seller.cut.openAmount = scOpen.value; });
+      var scOpenBtn = $("sellCutOpenBtn");
+      if (scOpenBtn) scOpenBtn.addEventListener("click", openCutSeller);
+      var scCounted = $("sellCutCounted");
+      if (scCounted) scCounted.addEventListener("input", function () { seller.cut.counted = scCounted.value; });
+      var scCloseBtn = $("sellCutCloseBtn");
+      if (scCloseBtn) scCloseBtn.addEventListener("click", closeCutSeller);
+      var scReopenBtn = $("sellCutReopenBtn");
+      if (scReopenBtn) scReopenBtn.addEventListener("click", reopenCutSeller);
     }
     function addToCart(pid) {
       var p = productById(pid); if (!p) return;
@@ -615,7 +703,7 @@
         .slice().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0) || b.id - a.id; }).slice(0, 100);
     }
     function adminHTML() {
-      var tabs = [["resumen", "Resumen"], ["productos", "Productos"], ["gastos", "Gastos"], ["caja", "Caja"], ["casa", "Casa"], ["ajustes", "Ajustes"]];
+      var tabs = [["resumen", "Resumen"], ["productos", "Productos"], ["gastos", "Gastos"], ["caja", "Caja"], ["casa", "Casa"], ["reportes", "Reportes"], ["ajustes", "Ajustes"]];
       var h = '<div class="admin-head"><h2>Administrador</h2><button type="button" class="btn-lock" id="btnLock">Bloquear</button></div>';
       h += '<div class="tabs" role="group" aria-label="Secciones del administrador">';
       tabs.forEach(function (t) {
@@ -627,6 +715,7 @@
       else if (ui.adminTab === "gastos") h += gastosHTML();
       else if (ui.adminTab === "caja") h += cajaHTML();
       else if (ui.adminTab === "casa") h += casaHTML();
+      else if (ui.adminTab === "reportes") h += reportesHTML();
       else h += ajustesHTML();
       return h;
     }
@@ -1022,6 +1111,134 @@
       toast("Categoría agregada.");
     }
 
+    /* ================= administrador: reportes ================= */
+    function periodLabel() {
+      return { dia: "Diario", semana: "Semanal", mes: "Mensual", anio: "Anual" }[ui.period] || "Del periodo";
+    }
+    function reportesHTML() {
+      var range = periodRange(ui.period, ui.anchor);
+      var s = computeStats(ui.period, range.from, range.to);
+      var house = houseTotal(range.from, range.to);
+      var disponible = s.profitCents - house;
+      var cuts = state.cashCuts.filter(function (ct) { return ct.date >= range.from && ct.date <= range.to; })
+        .slice().sort(function (a, b) { return a.date.localeCompare(b.date); });
+      var houseByCat = {};
+      state.housePurchases.filter(function (p) { return p.date >= range.from && p.date <= range.to; }).forEach(function (p) {
+        houseByCat[p.category] = (houseByCat[p.category] || 0) + p.amountCents;
+      });
+      var expByCat = {};
+      state.expenses.filter(function (e) { return e.expenseDate >= range.from && e.expenseDate <= range.to; }).forEach(function (e) {
+        expByCat[categoryLabel(e.category)] = (expByCat[categoryLabel(e.category)] || 0) + e.amountCents;
+      });
+      var h = periodControlsHTML();
+      h += '<section class="card"><h3>Reporte ' + esc(periodLabel().toLowerCase()) + '</h3>' +
+        '<p style="font-size:14px;color:var(--dim);margin:6px 0 0">Murillo\'s Pizza · ' + esc(prettyDate(range.from)) + (range.from === range.to ? "" : " — " + esc(prettyDate(range.to))) + "</p>" +
+        '<div class="no-print" style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">' +
+        '<button type="button" class="btn" id="repPrint" style="flex:1">Imprimir / guardar PDF</button>' +
+        '<button type="button" class="btn btn-ghost" id="repCSV" style="flex:1">Descargar reporte (CSV)</button></div></section>';
+      h += '<section class="oven"><p class="sub">Ganancia neta del periodo</p>' +
+        '<p class="big tnum' + (s.profitCents < 0 ? " neg" : "") + '">' + money(s.profitCents, true) + "</p>" +
+        '<p class="detail tnum">Ventas ' + money(s.revenueCents, true) + " − producción " + money(s.costCents, true) + " − comisión " + money(s.commissionCents, true) + " − gastos " + money(s.expensesCents, true) + "</p></section>";
+      h += '<div class="stat-grid">' +
+        statCard("Ventas (ingresos)", money(s.revenueCents, true), s.salesCount + " ventas · " + s.wholeCount + " enteras · " + s.sliceCount + " rebanadas") +
+        statCard("Costo de producción", money(s.costCents, true), "De lo vendido") +
+        statCard("Comisión tarjeta", money(s.commissionCents, true), "3.2% + IVA") +
+        statCard("Gastos de la pizzería", money(s.expensesCents, true), "Insumos y otros") +
+        statCard("Compras de casa", money(house, true), "Separadas de la pizzería") +
+        statCard("Disponible para la casa", money(disponible, true), disponible >= 0 ? "Ganancia − compras de casa" : "Gastaste más de lo generado") + "</div>";
+      if (s.byPayment.length > 0) {
+        h += '<section class="card"><h3>Ventas por método de pago</h3><ul class="kv">';
+        s.byPayment.forEach(function (bp) {
+          h += '<li><span>' + esc(paymentLabel(bp.method)) + ' <span class="c">(' + bp.count + ')</span></span><span class="v tnum">' + money(bp.revenueCents, true) + "</span></li>";
+        });
+        h += "</ul></section>";
+      }
+      if (s.byProduct.length > 0) {
+        h += '<section class="card"><h3>Ventas por pizza</h3><ul class="kv">';
+        s.byProduct.forEach(function (bp) {
+          h += '<li><span>' + esc(bp.name) + ' <span class="c">(' + bp.wholeQty + ' enteras · ' + bp.sliceQty + ' rebanadas)</span></span><span class="v tnum">' + money(bp.revenueCents, true) + " · ganancia " + money(bp.profitCents, true) + "</span></li>";
+        });
+        h += "</ul></section>";
+      }
+      var activeDays = s.series.filter(function (d) { return d.revenueCents !== 0 || d.profitCents !== 0; });
+      if (activeDays.length > 0) {
+        h += '<section class="card"><h3>' + (ui.period === "anio" ? "Por mes" : "Por día") + '</h3><ul class="kv">';
+        activeDays.forEach(function (d) {
+          h += '<li><span>' + esc(ui.period === "anio" ? prettyMonth(d.label) : prettyDate(d.label)) + '</span><span class="v tnum">ventas ' + money(d.revenueCents, true) + " · ganancia " + money(d.profitCents, true) + "</span></li>";
+        });
+        h += "</ul></section>";
+      }
+      if (cuts.length > 0) {
+        h += '<section class="card"><h3>Cortes de caja del periodo</h3><ul class="kv">';
+        cuts.forEach(function (ct) {
+          var d = cutDayTotals(ct.date);
+          var exp = ct.openCents + d.cashCents;
+          var df = ct.countedCents != null ? ct.countedCents - exp : null;
+          h += '<li><span>' + esc(prettyDate(ct.date)) + ' <span class="c">(' + (ct.status === "cerrada" ? "cerrada" : "abierta") + " · fondo " + money(ct.openCents, true) + " · ventas " + money(d.totalCents, true) + ")</span></span><span class=\"v tnum\">esperado " + money(exp, true) + (df != null ? " · dif. " + money(df, true) : "") + "</span></li>";
+        });
+        h += "</ul></section>";
+      }
+      var houseCats = Object.keys(houseByCat);
+      if (houseCats.length > 0) {
+        h += '<section class="card"><h3>Compras de casa por tienda</h3><ul class="kv">';
+        houseCats.sort(function (a, b) { return houseByCat[b] - houseByCat[a]; }).forEach(function (cat) {
+          h += '<li><span>' + esc(cat) + '</span><span class="v tnum">' + money(houseByCat[cat], true) + "</span></li>";
+        });
+        h += "</ul></section>";
+      }
+      var expCats = Object.keys(expByCat);
+      if (expCats.length > 0) {
+        h += '<section class="card"><h3>Gastos de la pizzería por categoría</h3><ul class="kv">';
+        expCats.sort(function (a, b) { return expByCat[b] - expByCat[a]; }).forEach(function (cat) {
+          h += '<li><span>' + esc(cat) + '</span><span class="v tnum">' + money(expByCat[cat], true) + "</span></li>";
+        });
+        h += "</ul></section>";
+      }
+      return h;
+    }
+    function reportCSV() {
+      function q(v) { return '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"'; }
+      var range = periodRange(ui.period, ui.anchor);
+      var s = computeStats(ui.period, range.from, range.to);
+      var house = houseTotal(range.from, range.to);
+      var disponible = s.profitCents - house;
+      var rows = [];
+      rows.push(["Reporte Murillo's Pizza", periodLabel(), prettyDate(range.from) + " — " + prettyDate(range.to)]);
+      rows.push([]);
+      rows.push(["Resumen", "Monto ($)"]);
+      rows.push(["Ventas (ingresos)", (s.revenueCents / 100).toFixed(2)]);
+      rows.push(["Costo de producción", (s.costCents / 100).toFixed(2)]);
+      rows.push(["Comisión tarjeta", (s.commissionCents / 100).toFixed(2)]);
+      rows.push(["Gastos de la pizzería", (s.expensesCents / 100).toFixed(2)]);
+      rows.push(["Ganancia neta", (s.profitCents / 100).toFixed(2)]);
+      rows.push(["Compras de casa", (house / 100).toFixed(2)]);
+      rows.push(["Disponible para la casa", (disponible / 100).toFixed(2)]);
+      rows.push([]);
+      rows.push(["Ventas por método de pago", "Ventas", "Monto ($)"]);
+      s.byPayment.forEach(function (bp) { rows.push([paymentLabel(bp.method), bp.count, (bp.revenueCents / 100).toFixed(2)]); });
+      rows.push([]);
+      rows.push(["Ventas por pizza", "Enteras", "Rebanadas", "Monto ($)", "Ganancia ($)"]);
+      s.byProduct.forEach(function (bp) { rows.push([bp.name, bp.wholeQty, bp.sliceQty, (bp.revenueCents / 100).toFixed(2), (bp.profitCents / 100).toFixed(2)]); });
+      rows.push([]);
+      rows.push([ui.period === "anio" ? "Mes" : "Fecha", "Ventas ($)", "Ganancia ($)"]);
+      s.series.forEach(function (d) { rows.push([d.label, (d.revenueCents / 100).toFixed(2), (d.profitCents / 100).toFixed(2)]); });
+      rows.push([]);
+      rows.push(["Cortes de caja", "Fondo ($)", "Ventas ($)", "Efectivo esperado ($)", "Contado ($)", "Diferencia ($)"]);
+      state.cashCuts.filter(function (ct) { return ct.date >= range.from && ct.date <= range.to; }).forEach(function (ct) {
+        var d = cutDayTotals(ct.date);
+        var exp = ct.openCents + d.cashCents;
+        rows.push([ct.date + " (" + ct.status + ")", (ct.openCents / 100).toFixed(2), (d.totalCents / 100).toFixed(2), (exp / 100).toFixed(2),
+          ct.countedCents != null ? (ct.countedCents / 100).toFixed(2) : "", ct.countedCents != null ? ((ct.countedCents - exp) / 100).toFixed(2) : ""]);
+      });
+      rows.push([]);
+      rows.push(["Compras de casa", "Tienda", "Fecha", "Monto ($)"]);
+      state.housePurchases.filter(function (p) { return p.date >= range.from && p.date <= range.to; }).forEach(function (p) {
+        rows.push([p.concept, p.category, p.date, (p.amountCents / 100).toFixed(2)]);
+      });
+      download("reporte-murillos-" + ui.period + "-" + range.from + ".csv", "﻿" + rows.map(function (r) { return r.map(q).join(","); }).join("\r\n"), "text/csv;charset=utf-8");
+      toast("Reporte descargado.");
+    }
+
     /* ================= administrador: ajustes y respaldo ================= */
     function ajustesHTML() {
       var st = adminUI.settings;
@@ -1207,6 +1424,11 @@
           adminUI.confirmDelHouseCat = null; saveState(); renderAdmin(); toast("Categoría borrada.");
         });
       });
+      /* reportes */
+      var repPrint = $("repPrint");
+      if (repPrint) repPrint.addEventListener("click", function () { window.print(); });
+      var repCSVBtn = $("repCSV");
+      if (repCSVBtn) repCSVBtn.addEventListener("click", reportCSV);
       /* ajustes */
       var setPin = $("setPin");
       if (setPin) setPin.addEventListener("input", function () {
