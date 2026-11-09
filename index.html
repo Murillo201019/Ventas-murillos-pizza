@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#17130f" />
+    <meta name="description" content="Ventas por rebanada y pizza entera, costos, gastos y estadísticas de Murillo's Pizza." />
+    <!-- Instalable desde el navegador (PWA) -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Murillo's Ventas" />
+    <title>Ventas Murillo's Pizza — Instalable</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet" />
+    <style>
+      :root{
+        color-scheme: light dark;
+        --bg:#faf5ec; --surface:#fffdf8; --surface2:#efe6d6;
+        --text:#221a12; --dim:#7d7261; --border:#e3d7c3;
+        --accent:#c22e1f; --accent-dark:#a32418; --accent-text:#ffffff;
+        --green:#3e7a3a; --green-soft:#e4efdd;
+        --oven:#17130f; --oven-dim:#b3a58d; --oven-text:#f5edde;
+        --danger:#c22e1f;
+        --shadow:0 1px 3px rgba(34,26,18,.08);
+      }
+      @media (prefers-color-scheme: dark){
+        :root{
+          --bg:#17130f; --surface:#241d16; --surface2:#2f261c;
+          --text:#f5edde; --dim:#b3a58d; --border:#453828;
+          --accent:#e0492f; --accent-dark:#c73a24;
+          --green:#6fbf6a; --green-soft:#26351f;
+          --oven:#0d0a08;
+          --shadow:0 1px 3px rgba(0,0,0,.4);
+        }
+      }
+      *{box-sizing:border-box}
+      html{-webkit-text-size-adjust:100%}
+      body{margin:0;background:var(--bg);color:var(--text);
+        font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+        font-size:16px;line-height:1.45}
+      .font-display{font-family:"Bricolage Grotesque",system-ui,sans-serif}
+      .tnum{font-variant-numeric:tabular-nums}
+      button{font:inherit;cursor:pointer;color:inherit}
+      button:disabled{cursor:default}
+      input,select{font:inherit;color:var(--text)}
+      img{display:block}
+      .wrap{max-width:760px;margin:0 auto;padding:0 16px 112px}
+
+      /* ---------- encabezado con logo ---------- */
+      .brand{display:flex;align-items:center;gap:12px;padding:16px 0 4px}
+      .brand img{width:58px;height:58px;border-radius:50%;border:2px solid var(--text);object-fit:cover;background:#000}
+      .brand h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:22px;line-height:1.1;font-weight:800;margin:0}
+      .brand p{margin:2px 0 0;font-size:13px;color:var(--dim)}
+      .brand .spacer{flex:1}
+      .btn-install-top{display:inline-flex;align-items:center;gap:6px;border:2px solid var(--text);
+        background:var(--surface);border-radius:999px;padding:8px 14px;font-weight:700;font-size:14px}
+      .btn-install-top svg{width:17px;height:17px}
+
+      /* ---------- tarjeta de instalación ---------- */
+      .install-card{margin-top:14px;border:2px solid var(--text);border-radius:20px;background:var(--surface);padding:18px;box-shadow:var(--shadow)}
+      .install-card h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:20px;font-weight:800;margin:0 0 4px}
+      .install-card p{margin:0 0 10px;font-size:14px;color:var(--dim)}
+      .install-card ol{margin:0 0 14px;padding-left:20px;font-size:14px}
+      .install-card ol li{margin:5px 0}
+      .install-card .row{display:flex;gap:8px;flex-wrap:wrap}
+      .install-card.warn{border-color:var(--accent)}
+      .install-card .warn-note{margin:12px 0 0;font-size:13.5px;color:var(--text);background:var(--surface2);border-radius:12px;padding:10px 12px}
+      a.btn{text-decoration:none}
+      .installed-note{margin-top:14px;border-radius:16px;background:var(--green-soft);padding:12px 16px;font-weight:600;font-size:14px}
+
+      /* ---------- botones / campos ---------- */
+      .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:14px;
+        background:var(--accent);color:var(--accent-text);font-family:"Bricolage Grotesque",system-ui,sans-serif;
+        font-weight:800;padding:0 18px;height:50px;font-size:17px}
+      .btn:disabled{opacity:.45}
+      .btn:active{background:var(--accent-dark)}
+      .btn-ghost{background:var(--surface);color:var(--text);border:1.5px solid var(--border)}
+      .btn-small{height:42px;font-size:15px;padding:0 14px;border-radius:12px}
+      .input{height:48px;width:100%;border-radius:12px;border:1.5px solid var(--border);background:var(--surface);padding:0 12px;font-size:16px}
+      .input:focus{outline:2px solid var(--accent);outline-offset:1px}
+      label.field{display:block}
+      label.field>span{display:block;margin-bottom:4px;font-size:14px;font-weight:600}
+      .err{color:var(--accent);font-size:14px;font-weight:600;text-align:center;margin:10px 0 0}
+      .okmsg{color:var(--green);font-size:14px;font-weight:700;margin:10px 0 0}
+      .hint{font-size:12px;color:var(--dim)}
+
+      /* ---------- tarjeta oscura (horno) ---------- */
+      .oven{margin-top:16px;border-radius:24px;background:var(--oven);color:var(--oven-text);padding:20px}
+      .oven .sub{font-size:14px;color:var(--oven-dim);margin:0}
+      .oven .big{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:46px;font-weight:800;line-height:1.05;margin:2px 0 0}
+      .oven .big.neg{color:#ff8a75}
+      .oven .detail{font-size:13px;color:var(--oven-dim);margin:6px 0 0}
+
+      /* ---------- selector entera / rebanada ---------- */
+      .seg{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:6px;border-radius:16px;background:var(--surface2);padding:6px}
+      .seg button{height:48px;border:none;border-radius:12px;background:transparent;color:var(--dim);
+        font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px}
+      .seg button svg{width:20px;height:20px}
+      .seg button[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+
+      /* ---------- rejilla de pizzas ---------- */
+      .grid-pizzas{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+      .pizza-card{border:1.5px solid var(--border);border-radius:18px;background:var(--surface);padding:16px;text-align:left;box-shadow:var(--shadow)}
+      .pizza-card:active{transform:scale(.98)}
+      .pizza-card .name{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:18px;font-weight:700;line-height:1.15;display:block}
+      .pizza-card .price{font-size:30px;font-weight:800;color:var(--accent);display:block;margin-top:8px}
+      .pizza-card .meta{font-size:12px;color:var(--dim);display:block;margin-top:2px}
+      .empty{margin-top:20px;border:1.5px dashed var(--border);border-radius:18px;padding:24px;text-align:center;color:var(--dim);font-size:15px}
+
+      /* ---------- carrito ---------- */
+      .card{margin-top:20px;border:1.5px solid var(--border);border-radius:24px;background:var(--surface);padding:18px;box-shadow:var(--shadow)}
+      .card h2,.card h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;margin:0}
+      .card h2{font-size:19px}.card h3{font-size:17px}
+      .cart-lines{list-style:none;margin:6px 0 0;padding:0}
+      .cart-lines li{padding:12px 0;border-bottom:1px solid var(--border)}
+      .cart-lines li:last-child{border-bottom:none}
+      .cart-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+      .cart-name{font-weight:600;min-width:0}
+      .cart-kind{font-size:12px;color:var(--dim)}
+      .price-btn{background:none;border:none;padding:2px 0;font-size:14px;color:var(--dim);text-decoration:underline dotted;text-align:left}
+      .price-btn .mod{color:var(--accent);font-weight:700;text-decoration:none}
+      .qty{display:flex;align-items:center;gap:8px;flex-shrink:0}
+      .qty button{width:40px;height:40px;border-radius:50%;border:none;background:var(--surface2);
+        font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:21px;font-weight:800;line-height:1}
+      .qty .n{width:24px;text-align:center;font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:18px;font-weight:800}
+      .line-total{width:76px;text-align:right;font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:18px;font-weight:800;flex-shrink:0}
+      .price-edit{display:flex;align-items:center;gap:6px;margin-top:4px}
+      .price-edit input{height:38px;width:100px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface);padding:0 8px}
+      .price-edit button{height:38px;border:none;border-radius:10px;background:var(--accent);color:var(--accent-text);padding:0 14px;font-weight:800}
+      .pay-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+      .pay-grid button{border:2px solid var(--border);background:var(--surface);border-radius:14px;padding:10px 4px;
+        font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:13px;font-weight:700;text-align:center}
+      .pay-grid button svg{width:24px;height:24px;display:block;margin:0 auto 4px}
+      .pay-grid button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent);color:var(--accent-text)}
+      .total-row{display:flex;align-items:center;justify-content:space-between;margin-top:14px}
+      .total-row .lbl{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:18px;font-weight:800}
+      .total-row .val{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:32px;font-weight:800}
+      .btn-cobrar{margin-top:12px;width:100%;height:56px;font-size:21px;border-radius:16px}
+      .btn-vaciar{margin-top:6px;width:100%;height:42px;background:none;border:none;color:var(--dim);font-weight:600;font-size:14px}
+      .success{margin-top:16px;border-radius:18px;background:var(--green);color:#fff;padding:16px;text-align:center;
+        font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:18px;font-weight:800}
+
+      /* ---------- navegación inferior ---------- */
+      .bottomnav{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);border-top:1.5px solid var(--border);
+        padding-bottom:env(safe-area-inset-bottom)}
+      .bottomnav .inner{max-width:760px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr}
+      .bottomnav button{background:none;border:none;padding:10px 0 12px;display:flex;flex-direction:column;align-items:center;gap:2px;
+        font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:14px;font-weight:700;color:var(--dim)}
+      .bottomnav button svg{width:25px;height:25px}
+      .bottomnav button[aria-pressed="true"]{color:var(--accent)}
+
+      /* ---------- admin ---------- */
+      .gate{max-width:400px;margin:36px auto 0;border:1.5px solid var(--border);border-radius:24px;background:var(--surface);padding:26px;box-shadow:var(--shadow)}
+      .gate .lock-ic{width:44px;height:44px;margin:0 auto;color:var(--accent)}
+      .gate h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:23px;font-weight:800;text-align:center;margin:8px 0 4px}
+      .gate .desc{text-align:center;font-size:14px;color:var(--dim);margin:0 0 16px}
+      .gate form{display:grid;gap:12px}
+      .admin-head{display:flex;align-items:center;justify-content:space-between;margin-top:16px}
+      .admin-head h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:25px;font-weight:800;margin:0}
+      .btn-lock{border:1.5px solid var(--border);background:var(--surface);border-radius:999px;padding:7px 14px;font-size:14px;font-weight:600;color:var(--dim)}
+      .tabs{margin-top:12px;display:flex;gap:4px;border-radius:16px;background:var(--surface2);padding:6px;overflow-x:auto}
+      .tabs button{flex:1;white-space:nowrap;height:40px;border:none;border-radius:11px;background:transparent;color:var(--dim);
+        font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:14px;font-weight:700;padding:0 10px}
+      .tabs button[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+      .period-seg{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;border-radius:14px;background:var(--surface2);padding:4px;margin-top:16px}
+      .period-seg button{height:38px;border:none;border-radius:9px;background:transparent;color:var(--dim);
+        font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:14px;font-weight:700}
+      .period-seg button[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+      .period-nav{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-top:10px}
+      .period-nav .arrow{width:42px;height:42px;border-radius:50%;border:none;background:var(--surface2);
+        font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:19px;font-weight:800;flex-shrink:0}
+      .period-nav .mid{text-align:center}
+      .period-nav .rng{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-size:16px}
+      .period-nav input[type="date"]{margin-top:2px;border:1.5px solid var(--border);border-radius:9px;background:var(--surface);padding:4px 8px;font-size:14px;color:var(--dim)}
+      .period-nav .hoy{background:none;border:none;color:var(--accent);font-weight:700;text-decoration:underline;font-size:14px;margin-left:6px}
+      .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+      .stat{border:1.5px solid var(--border);border-radius:18px;background:var(--surface);padding:15px;box-shadow:var(--shadow)}
+      .stat .lbl{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);margin:0}
+      .stat .val{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:25px;font-weight:800;margin:3px 0 0}
+      .stat .sub{font-size:12px;color:var(--dim);margin:2px 0 0}
+      .list{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:9px}
+      .list>li{border:1.5px solid var(--border);border-radius:16px;background:var(--surface);padding:13px 14px;box-shadow:var(--shadow)}
+      .list .rowb{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+      .list .ttl{font-weight:600}
+      .list .meta{font-size:12px;color:var(--dim);margin-top:1px}
+      .list .amt{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;text-align:right;white-space:nowrap}
+      .list .gain{font-size:12px;color:var(--green);text-align:right}
+      .voided{opacity:.5}.voided .ttl{text-decoration:line-through}
+      .link-btn{background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;text-decoration:underline;padding:2px 0}
+      .confirm-row{display:flex;gap:8px;margin-top:8px}
+      .confirm-row button{flex:1;height:38px;border-radius:10px;font-size:14px;font-weight:700}
+      .confirm-row .yes{background:var(--accent);color:var(--accent-text);border:none}
+      .confirm-row .no{background:var(--surface);border:1.5px solid var(--border)}
+      .kv{list-style:none;margin:8px 0 0;padding:0}
+      .kv li{display:flex;justify-content:space-between;font-size:14px;padding:4px 0}
+      .kv .c{color:var(--dim)}
+      .kv .v{font-weight:700}
+      .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+      .form-grid .full{grid-column:1/-1}
+      .preview{margin-top:12px;border-radius:12px;background:var(--surface2);padding:12px;font-size:14px}
+      .preview .pos{color:var(--green);font-weight:800}.preview .negc{color:var(--accent);font-weight:800}
+      .prod-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+      .prod-actions button{border:none;border-radius:9px;padding:7px 12px;font-size:14px;font-weight:700;background:var(--surface2)}
+      .prod-actions button.ghostb{background:var(--surface);border:1.5px solid var(--border);color:var(--dim);font-weight:600}
+      .chart-wrap{margin-top:6px}
+      .chart-wrap svg{width:100%;height:auto;display:block}
+      .legend{display:flex;gap:16px;font-size:12px;color:var(--dim);margin-top:4px}
+      .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px}
+      .explain{list-style:disc;padding-left:20px;margin:10px 0 0;font-size:14px;color:var(--dim);display:grid;gap:6px}
+      .explain strong{color:var(--text)}
+      .section-title{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:19px;font-weight:800;margin:22px 0 0}
+
+      /* ---------- modal PIN ---------- */
+      .modal-back{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
+      @media (min-width:560px){.modal-back{align-items:center;padding:16px}}
+      .modal{width:100%;max-width:380px;background:var(--surface);border-radius:24px 24px 0 0;padding:22px 20px calc(20px + env(safe-area-inset-bottom))}
+      @media (min-width:560px){.modal{border-radius:24px}}
+      .modal h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:20px;font-weight:800;margin:0}
+      .modal .desc{font-size:14px;color:var(--dim);margin:4px 0 0}
+      .pin-dots{margin-top:16px;height:50px;border-radius:12px;background:var(--surface2);display:flex;align-items:center;justify-content:center;
+        font-size:24px;letter-spacing:.5em;text-indent:.5em}
+      .pin-dots .ph{font-size:15px;letter-spacing:normal;text-indent:0;color:var(--dim)}
+      .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+      .pin-pad button{height:56px;border:none;border-radius:12px;background:var(--surface2);
+        font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:21px;font-weight:800}
+      .pin-pad button:active{background:var(--border)}
+      .modal .btnrow{display:flex;gap:8px;margin-top:16px}
+      .modal .btnrow button{flex:1;height:50px;border-radius:12px;font-weight:700;font-size:16px}
+      .modal .cancel{background:var(--surface);border:1.5px solid var(--border)}
+      .modal .auth{background:var(--accent);color:var(--accent-text);border:none;font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800}
+      .modal .auth:disabled{opacity:.4}
+
+      /* ---------- toast ---------- */
+      .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;z-index:70;background:var(--oven);color:var(--oven-text);
+        border-radius:999px;padding:11px 20px;font-weight:700;font-size:15px;box-shadow:0 6px 20px rgba(0,0,0,.3);
+        opacity:0;pointer-events:none;transition:opacity .25s;max-width:92vw;text-align:center}
+      .toast.show{opacity:1}
+      @media (max-width:420px){
+        .oven .big{font-size:40px}
+        .brand h1{font-size:19px}
+        .btn-install-top{padding:7px 11px;font-size:13px}
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="brand">
+        <img src="icon-192.png" alt="Logo de Murillo's Pizza: horno de piedra con una rebanada de pizza, en blanco y negro" width="58" height="58" />
+        <div>
+          <h1>Ventas Murillo&rsquo;s Pizza</h1>
+          <p>Pizza napolitana al horno de piedra · Mérida</p>
+        </div>
+        <div class="spacer"></div>
+        <button type="button" class="btn-install-top" id="btnInstallTop" aria-label="Instalar la app en este teléfono">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>
+          Instalar
+        </button>
+      </header>
+
+      <div id="installArea"></div>
+
+      <main>
+        <section id="viewVender" aria-label="Vender"></section>
+        <section id="viewAdmin" aria-label="Administrador" hidden></section>
+      </main>
+    </div>
+
+    <nav class="bottomnav" aria-label="Secciones">
+      <div class="inner">
+        <button type="button" id="navVender" aria-pressed="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 3a9 9 0 0 1 9 9l-8.2-.6a2.5 2.5 0 0 1-2-3.9L12 3Z"/><circle cx="9" cy="14" r="1" fill="currentColor"/><circle cx="14.5" cy="16.5" r="1" fill="currentColor"/><circle cx="8.5" cy="8.5" r="1" fill="currentColor"/></svg>
+          Vender
+        </button>
+        <button type="button" id="navAdmin" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.3" fill="currentColor" stroke="none"/></svg>
+          Administrador
+        </button>
+      </div>
+    </nav>
+
+    <div id="modalRoot"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
