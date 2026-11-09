@@ -88,7 +88,10 @@
           { id: 1, name: "Pepperoni", costCents: 4400, priceCents: 18000, slicesPerPizza: 8, slicePriceCents: null, sliceCostCents: null, active: true }
         ],
         sales: [],
-        expenses: []
+        expenses: [],
+        cashCuts: [],
+        housePurchases: [],
+        houseCategories: ["Costco", "Sam's", "Chedraui", "Walmart"]
       };
     }
     function loadState() {
@@ -96,7 +99,15 @@
         var raw = window.localStorage.getItem(LS_KEY);
         if (raw) {
           var parsed = JSON.parse(raw);
-          if (parsed && parsed.v === 1 && Array.isArray(parsed.products)) { state = parsed; return; }
+          if (parsed && parsed.v === 1 && Array.isArray(parsed.products)) {
+            state = parsed;
+            /* Migración: datos guardados antes de caja y compras de casa */
+            if (!Array.isArray(state.cashCuts)) state.cashCuts = [];
+            if (!Array.isArray(state.housePurchases)) state.housePurchases = [];
+            if (!Array.isArray(state.houseCategories) || state.houseCategories.length === 0)
+              state.houseCategories = ["Costco", "Sam's", "Chedraui", "Walmart"];
+            return;
+          }
         }
       } catch (e) { storageOK = false; }
       state = seedState();
@@ -155,6 +166,32 @@
     function categoryLabel(id) {
       for (var i = 0; i < EXPENSE_CATEGORIES.length; i++) if (EXPENSE_CATEGORIES[i].id === id) return EXPENSE_CATEGORIES[i].label;
       return id;
+    }
+
+    /* ================= corte de caja ================= */
+    function cutForDate(date) {
+      for (var i = 0; i < state.cashCuts.length; i++) if (state.cashCuts[i].date === date) return state.cashCuts[i];
+      return null;
+    }
+    /* Ventas de un día por método de pago (sin anuladas) */
+    function cutDayTotals(date) {
+      var t = { totalCents: 0, cashCents: 0, cardCents: 0, transferCents: 0, count: 0 };
+      state.sales.forEach(function (s) {
+        if (s.saleDate !== date || s.voided) return;
+        t.totalCents += s.totalCents; t.count += 1;
+        if (s.paymentMethod === "efectivo") t.cashCents += s.totalCents;
+        else if (s.paymentMethod === "tarjeta") t.cardCents += s.totalCents;
+        else if (s.paymentMethod === "transferencia") t.transferCents += s.totalCents;
+      });
+      return t;
+    }
+    /* Efectivo que debería haber en caja: fondo inicial + ventas en efectivo del día */
+    function expectedCash(cut) { return cut.openCents + cutDayTotals(cut.date).cashCents; }
+
+    /* ================= compras de casa ================= */
+    function houseTotal(from, to) {
+      return state.housePurchases.filter(function (p) { return p.date >= from && p.date <= to; })
+        .reduce(function (a, p) { return a + p.amountCents; }, 0);
     }
 
     /* ================= sesión / navegación ================= */
@@ -492,6 +529,10 @@
     /* ================= administrador: panel ================= */
     var adminUI = { confirmVoid: null, confirmDelExpense: null, editingId: null, form: null, formErr: null, formMsg: null,
       exp: { concept: "", amount: "", category: "insumos", date: todayStr(), err: null },
+      cut: { date: todayStr(), openAmount: "500", counted: "", err: null },
+      house: { concept: "", amount: "", category: "", date: todayStr(), err: null },
+      houseCat: { name: "", err: null },
+      confirmDelHouse: null, confirmDelHouseCat: null,
       settings: { newPin: "", err: null, msg: null, confirmWipe: false } };
     function emptyProductForm() { return { name: "", cost: "", price: "", slices: "8", slicePrice: "", sliceCost: "" }; }
     if (!adminUI.form) adminUI.form = emptyProductForm();
@@ -574,7 +615,7 @@
         .slice().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0) || b.id - a.id; }).slice(0, 100);
     }
     function adminHTML() {
-      var tabs = [["resumen", "Resumen"], ["productos", "Productos"], ["gastos", "Gastos"], ["ajustes", "Ajustes"]];
+      var tabs = [["resumen", "Resumen"], ["productos", "Productos"], ["gastos", "Gastos"], ["caja", "Caja"], ["casa", "Casa"], ["ajustes", "Ajustes"]];
       var h = '<div class="admin-head"><h2>Administrador</h2><button type="button" class="btn-lock" id="btnLock">Bloquear</button></div>';
       h += '<div class="tabs" role="group" aria-label="Secciones del administrador">';
       tabs.forEach(function (t) {
@@ -584,6 +625,8 @@
       if (ui.adminTab === "resumen") h += resumenHTML();
       else if (ui.adminTab === "productos") h += productosHTML();
       else if (ui.adminTab === "gastos") h += gastosHTML();
+      else if (ui.adminTab === "caja") h += cajaHTML();
+      else if (ui.adminTab === "casa") h += casaHTML();
       else h += ajustesHTML();
       return h;
     }
@@ -788,6 +831,197 @@
       toast("Gasto guardado.");
     }
 
+    /* ================= administrador: corte de caja ================= */
+    function cajaHTML() {
+      var c = adminUI.cut;
+      var cut = cutForDate(c.date);
+      var day = cutDayTotals(c.date);
+      var h = '<section class="card"><h3>Corte de caja del día</h3>' +
+        '<p style="font-size:14px;color:var(--dim);margin:6px 0 0">Abre el día con el fondo inicial en efectivo; las ventas se suman solas según se registran. Al cerrar, compara el efectivo contado con el esperado.</p>' +
+        '<div style="display:grid;gap:12px;margin-top:12px">' +
+        '<label class="field"><span>Fecha del corte</span><input class="input" id="cutDate" type="date" value="' + esc(c.date) + '" aria-label="Fecha del corte"></label>';
+      if (!cut) {
+        h += '<label class="field"><span>Fondo inicial en efectivo ($)</span><input class="input" id="cutOpen" inputmode="decimal" value="' + esc(c.openAmount) + '" placeholder="500" aria-label="Fondo inicial en efectivo"></label>';
+        if (c.err) h += '<p class="err" role="alert" style="text-align:left;margin:0">' + esc(c.err) + "</p>";
+        h += '<button type="button" class="btn" id="cutOpenBtn" style="width:100%">Abrir caja</button>';
+        if (day.count > 0) h += '<p class="hint">Ya hay ' + day.count + ' venta(s) registrada(s) este día por ' + money(day.totalCents, true) + " sin corte abierto.</p>";
+      }
+      h += "</div></section>";
+      if (cut) {
+        var expected = expectedCash(cut);
+        h += '<section class="oven"><p class="sub">Caja del ' + esc(prettyDate(cut.date)) + " · " + (cut.status === "cerrada" ? "CERRADA" : "ABIERTA") + "</p>" +
+          '<p class="big tnum">' + money(expected, true) + '</p><p class="detail tnum">Efectivo esperado en caja: fondo ' + money(cut.openCents, true) + " + ventas en efectivo " + money(day.cashCents, true) + "</p></section>";
+        h += '<div class="stat-grid">' +
+          statCard("Ventas del día", money(day.totalCents, true), day.count + " ventas") +
+          statCard("En efectivo", money(day.cashCents, true), "Entra a la caja") +
+          statCard("Con tarjeta", money(day.cardCents, true), "No entra a la caja") +
+          statCard("Transferencia", money(day.transferCents, true), "No entra a la caja") + "</div>";
+        if (cut.status === "abierta") {
+          h += '<section class="card"><h3>Cerrar caja</h3>' +
+            '<p style="font-size:14px;color:var(--dim);margin:6px 0 0">Cuenta el efectivo de la caja y escríbelo para ver si sobra o falta. Puedes dejarlo vacío y cerrar solo con el esperado.</p>' +
+            '<div style="display:grid;gap:12px;margin-top:12px">' +
+            '<label class="field"><span>Efectivo contado al cierre ($) — opcional</span><input class="input" id="cutCounted" inputmode="decimal" value="' + esc(c.counted) + '" placeholder="Ej. 680" aria-label="Efectivo contado al cierre"></label>';
+          if (c.err) h += '<p class="err" role="alert" style="text-align:left;margin:0">' + esc(c.err) + "</p>";
+          h += '<button type="button" class="btn" id="cutCloseBtn" style="width:100%">Cerrar caja</button></div></section>';
+        } else {
+          var diff = cut.countedCents != null ? cut.countedCents - expected : null;
+          h += '<section class="card"><h3>Cierre registrado</h3><ul class="kv">' +
+            "<li><span>Efectivo esperado</span><span class=\"v tnum\">" + money(expected, true) + "</span></li>";
+          if (cut.countedCents != null) {
+            h += "<li><span>Efectivo contado</span><span class=\"v tnum\">" + money(cut.countedCents, true) + "</span></li>" +
+              '<li><span>Diferencia</span><span class="v tnum" style="color:' + (diff >= 0 ? "var(--green)" : "var(--accent)") + ';font-weight:700">' + money(diff, true) + " " + (diff > 0 ? "· sobrante" : diff < 0 ? "· faltante" : "· exacto") + "</span></li>";
+          } else {
+            h += "<li><span>Efectivo contado</span><span class=\"v tnum\">No se contó</span></li>";
+          }
+          h += '</ul><button type="button" class="btn btn-ghost" id="cutReopenBtn" style="width:100%;margin-top:12px">Reabrir caja para corregir</button></section>';
+        }
+      }
+      if (state.cashCuts.length > 0) {
+        h += '<h3 class="section-title">Historial de cortes</h3><ul class="list">';
+        state.cashCuts.slice().sort(function (a, b) { return b.date.localeCompare(a.date); }).forEach(function (ct) {
+          var d = cutDayTotals(ct.date);
+          var exp = ct.openCents + d.cashCents;
+          var df = ct.countedCents != null ? ct.countedCents - exp : null;
+          h += '<li><div class="rowb"><div><div class="ttl">' + esc(prettyDate(ct.date)) + ' · ' + (ct.status === "cerrada" ? "Cerrada" : "Abierta") + "</div>" +
+            '<div class="meta tnum">Fondo ' + money(ct.openCents, true) + " · Ventas " + money(d.totalCents, true) + " · Efectivo esperado " + money(exp, true) +
+            (df != null ? " · Diferencia " + money(df, true) + (df > 0 ? " sobrante" : df < 0 ? " faltante" : " exacto") : "") + "</div></div>" +
+            '<div><div class="amt tnum">' + money(d.totalCents, true) + "</div></div></div></li>";
+        });
+        h += "</ul>";
+      }
+      return h;
+    }
+    function openCut() {
+      var c = adminUI.cut;
+      c.date = $("cutDate").value || todayStr();
+      var openCents = toCents($("cutOpen").value);
+      c.err = null;
+      if (cutForDate(c.date)) c.err = "Ya hay un corte para esa fecha.";
+      else if (openCents === null || openCents < 0) c.err = "Escribe el fondo inicial en efectivo (puede ser 0).";
+      if (c.err) { renderAdmin(); return; }
+      state.cashCuts.push({ id: nid(), date: c.date, openCents: openCents, status: "abierta", countedCents: null, closedAt: null });
+      c.openAmount = "500"; c.counted = "";
+      saveState(); renderAdmin();
+      toast("Caja abierta con fondo de " + money(openCents, true) + ".");
+    }
+    function closeCut() {
+      var c = adminUI.cut;
+      var cut = cutForDate(c.date);
+      if (!cut || cut.status !== "abierta") return;
+      var countedText = $("cutCounted").value.trim();
+      var counted = countedText === "" ? null : toCents(countedText);
+      c.err = null;
+      if (counted === null && countedText !== "") c.err = "Revisa el efectivo contado.";
+      if (c.err) { renderAdmin(); return; }
+      cut.status = "cerrada"; cut.countedCents = counted; cut.closedAt = Date.now();
+      c.counted = "";
+      saveState(); renderAdmin();
+      var expected = expectedCash(cut);
+      toast(counted == null ? "Caja cerrada." : (counted === expected ? "Caja cerrada. Efectivo exacto." : counted > expected ? "Caja cerrada. Sobran " + money(counted - expected, true) + "." : "Caja cerrada. Faltan " + money(expected - counted, true) + "."));
+    }
+    function reopenCut() {
+      var cut = cutForDate(adminUI.cut.date);
+      if (!cut) return;
+      cut.status = "abierta"; cut.countedCents = null; cut.closedAt = null;
+      saveState(); renderAdmin();
+      toast("Caja reabierta.");
+    }
+
+    /* ================= administrador: compras de casa ================= */
+    function casaHTML() {
+      var range = periodRange(ui.period, ui.anchor);
+      var s = computeStats(ui.period, range.from, range.to);
+      var house = houseTotal(range.from, range.to);
+      var disponible = s.profitCents - house;
+      var hs = adminUI.house;
+      var h = periodControlsHTML();
+      h += '<section class="oven"><p class="sub">Disponible para la casa en el periodo</p>' +
+        '<p class="big tnum' + (disponible < 0 ? " neg" : "") + '">' + money(disponible, true) + "</p>" +
+        '<p class="detail tnum">Ganancia de pizzas ' + money(s.profitCents, true) + " − compras de casa " + money(house, true) + "</p></section>";
+      h += '<div class="stat-grid">' +
+        statCard("Ganancia de pizzas", money(s.profitCents, true), "Ya descuenta producción, comisión y gastos") +
+        statCard("Compras de casa", money(house, true), "En este periodo") +
+        statCard("Disponible", money(disponible, true), disponible >= 0 ? "Dentro del presupuesto" : "Gastaste más de lo generado") + "</div>";
+      h += '<section class="card"><h3>Registrar compra de casa</h3>' +
+        '<p style="font-size:14px;color:var(--dim);margin:6px 0 0">Compras para la casa, separadas de los gastos de la pizzería, pero comparadas con lo que generan las pizzas.</p>' +
+        '<div style="display:grid;gap:12px;margin-top:12px">' +
+        '<label class="field"><span>¿Qué compraste?</span><input class="input" id="houseConcept" value="' + esc(hs.concept) + '" placeholder="Ej. Despensa de la semana" aria-label="Concepto de la compra de casa"></label>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+        '<label class="field"><span>Monto ($)</span><input class="input" id="houseAmount" inputmode="decimal" value="' + esc(hs.amount) + '" placeholder="850" aria-label="Monto de la compra en pesos"></label>' +
+        '<label class="field"><span>Fecha</span><input class="input" id="houseDate" type="date" value="' + esc(hs.date) + '" aria-label="Fecha de la compra"></label></div>' +
+        '<label class="field"><span>Tienda / categoría</span><select class="input" id="houseCategory" aria-label="Tienda o categoría de la compra">' +
+        state.houseCategories.map(function (cat) { return '<option value="' + esc(cat) + '"' + ((hs.category || state.houseCategories[0]) === cat ? " selected" : "") + ">" + esc(cat) + "</option>"; }).join("") +
+        "</select></label>";
+      if (hs.err) h += '<p class="err" role="alert" style="text-align:left;margin:0">' + esc(hs.err) + "</p>";
+      h += '<button type="button" class="btn" id="houseSave" style="width:100%">Guardar compra de casa</button></div></section>';
+      h += '<section class="card"><h3>Tiendas / categorías</h3>' +
+        '<p style="font-size:14px;color:var(--dim);margin:6px 0 0">Edítalas a tu criterio. Las compras ya registradas conservan su tienda aunque la borres de la lista.</p>' +
+        '<div style="display:flex;gap:8px;margin-top:12px"><input class="input" id="houseCatName" value="' + esc(adminUI.houseCat.name) + '" placeholder="Ej. Soriana" aria-label="Nueva tienda o categoría" style="flex:1">' +
+        '<button type="button" class="btn" id="houseCatAdd">Agregar</button></div>';
+      if (adminUI.houseCat.err) h += '<p class="err" role="alert" style="text-align:left;margin:8px 0 0">' + esc(adminUI.houseCat.err) + "</p>";
+      h += '<ul class="kv" style="margin-top:12px">';
+      state.houseCategories.forEach(function (cat) {
+        h += "<li><span>" + esc(cat) + "</span>";
+        if (adminUI.confirmDelHouseCat === cat) {
+          h += '<span><button type="button" class="btn btn-small" data-delhousecat="' + esc(cat) + '">Borrar</button> <button type="button" class="btn btn-ghost btn-small" data-delhousecatcancel="1">No</button></span>';
+        } else {
+          h += '<button type="button" class="link-btn" data-delhousecatask="' + esc(cat) + '">Borrar</button>';
+        }
+        h += "</li>";
+      });
+      h += "</ul></section>";
+      var list = state.housePurchases.filter(function (p) { return p.date >= range.from && p.date <= range.to; })
+        .slice().sort(function (a, b) { return b.date.localeCompare(a.date) || b.id - a.id; });
+      h += '<h3 class="section-title">Compras de casa del periodo <span class="tnum" style="color:var(--dim)">(' + money(house, true) + ")</span></h3>";
+      if (list.length === 0) h += '<p class="empty">Sin compras de casa registradas en este periodo.</p>';
+      else {
+        h += '<ul class="list">';
+        list.forEach(function (p) {
+          h += '<li><div class="rowb"><div><div class="ttl">' + esc(p.concept) + '</div><div class="meta">' + esc(prettyDate(p.date)) + " · " + esc(p.category) + "</div></div>" +
+            '<div style="display:flex;align-items:center;gap:8px"><span class="amt tnum">' + money(p.amountCents, true) + "</span>";
+          if (adminUI.confirmDelHouse === p.id) {
+            h += '<button type="button" class="btn btn-small" data-delhouse="' + p.id + '" aria-label="Confirmar borrado de ' + esc(p.concept) + '">Borrar</button>' +
+              '<button type="button" class="btn btn-ghost btn-small" data-delhousecancel="1">No</button>';
+          } else {
+            h += '<button type="button" class="link-btn" data-delhouseask="' + p.id + '" aria-label="Borrar compra ' + esc(p.concept) + '">Borrar</button>';
+          }
+          h += "</div></div></li>";
+        });
+        h += "</ul>";
+      }
+      return h;
+    }
+    function saveHousePurchase() {
+      var hs = adminUI.house;
+      hs.concept = $("houseConcept").value;
+      hs.amount = $("houseAmount").value;
+      hs.date = $("houseDate").value || todayStr();
+      hs.category = $("houseCategory").value;
+      var amountCents = toCents(hs.amount);
+      hs.err = null;
+      if (!hs.concept.trim()) hs.err = "Escribe qué compraste.";
+      else if (amountCents === null || amountCents <= 0) hs.err = "Escribe el monto de la compra.";
+      else if (!hs.category) hs.err = "Elige una tienda o categoría.";
+      if (hs.err) { renderAdmin(); return; }
+      state.housePurchases.push({ id: nid(), date: hs.date, category: hs.category, concept: hs.concept.trim(), amountCents: amountCents });
+      saveState();
+      hs.concept = ""; hs.amount = "";
+      renderAdmin();
+      toast("Compra de casa guardada.");
+    }
+    function addHouseCategory() {
+      var name = $("houseCatName").value.trim();
+      adminUI.houseCat.name = name;
+      adminUI.houseCat.err = null;
+      if (!name) adminUI.houseCat.err = "Escribe el nombre de la tienda o categoría.";
+      else if (state.houseCategories.some(function (c) { return c.toLowerCase() === name.toLowerCase(); })) adminUI.houseCat.err = "Esa tienda ya está en la lista.";
+      if (adminUI.houseCat.err) { renderAdmin(); return; }
+      state.houseCategories.push(name);
+      adminUI.houseCat.name = "";
+      saveState(); renderAdmin();
+      toast("Categoría agregada.");
+    }
+
     /* ================= administrador: ajustes y respaldo ================= */
     function ajustesHTML() {
       var st = adminUI.settings;
@@ -810,7 +1044,7 @@
       if (!st.confirmWipe) {
         h += '<button type="button" class="link-btn" id="wipeAsk" style="margin-top:14px">Borrar todos los datos de esta app…</button>';
       } else {
-        h += '<p class="err" style="text-align:left">Esto borra pizzas, ventas, gastos y el PIN de este teléfono. No se puede deshacer. ¿Seguro?</p>' +
+        h += '<p class="err" style="text-align:left">Esto borra pizzas, ventas, gastos, cortes de caja, compras de casa y el PIN de este teléfono. No se puede deshacer. ¿Seguro?</p>' +
           '<div class="confirm-row"><button type="button" class="yes" id="wipeYes">Sí, borrar todo</button><button type="button" class="no" id="wipeNo">Cancelar</button></div>';
       }
       h += "</section>";
@@ -849,7 +1083,10 @@
         try {
           var parsed = JSON.parse(String(reader.result));
           if (!parsed || !Array.isArray(parsed.products) || !Array.isArray(parsed.sales) || !Array.isArray(parsed.expenses)) throw new Error("bad");
-          state = { v: 1, pinHash: parsed.pinHash || null, nextId: Number(parsed.nextId) || 100, products: parsed.products, sales: parsed.sales, expenses: parsed.expenses };
+          state = { v: 1, pinHash: parsed.pinHash || null, nextId: Number(parsed.nextId) || 100, products: parsed.products, sales: parsed.sales, expenses: parsed.expenses,
+            cashCuts: Array.isArray(parsed.cashCuts) ? parsed.cashCuts : [],
+            housePurchases: Array.isArray(parsed.housePurchases) ? parsed.housePurchases : [],
+            houseCategories: Array.isArray(parsed.houseCategories) && parsed.houseCategories.length > 0 ? parsed.houseCategories : ["Costco", "Sam's", "Chedraui", "Walmart"] };
           saveState();
           ui.adminUnlocked = false; seller.cart = [];
           renderAdmin(); setMode("admin");
@@ -927,6 +1164,47 @@
           var id = Number(b.getAttribute("data-delexp"));
           state.expenses = state.expenses.filter(function (e) { return e.id !== id; });
           adminUI.confirmDelExpense = null; saveState(); renderAdmin(); toast("Gasto borrado.");
+        });
+      });
+      /* caja */
+      var cutDate = $("cutDate");
+      if (cutDate) cutDate.addEventListener("change", function () { if (cutDate.value) { adminUI.cut.date = cutDate.value; adminUI.cut.err = null; renderAdmin(); } });
+      var cutOpenBtn = $("cutOpenBtn");
+      if (cutOpenBtn) cutOpenBtn.addEventListener("click", openCut);
+      var cutCloseBtn = $("cutCloseBtn");
+      if (cutCloseBtn) cutCloseBtn.addEventListener("click", closeCut);
+      var cutReopenBtn = $("cutReopenBtn");
+      if (cutReopenBtn) cutReopenBtn.addEventListener("click", reopenCut);
+      /* compras de casa */
+      var houseSave = $("houseSave");
+      if (houseSave) houseSave.addEventListener("click", saveHousePurchase);
+      var houseCatAdd = $("houseCatAdd");
+      if (houseCatAdd) houseCatAdd.addEventListener("click", addHouseCategory);
+      el.querySelectorAll("[data-delhouseask]").forEach(function (b) {
+        b.addEventListener("click", function () { adminUI.confirmDelHouse = Number(b.getAttribute("data-delhouseask")); renderAdmin(); });
+      });
+      el.querySelectorAll("[data-delhousecancel]").forEach(function (b) {
+        b.addEventListener("click", function () { adminUI.confirmDelHouse = null; renderAdmin(); });
+      });
+      el.querySelectorAll("[data-delhouse]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var id = Number(b.getAttribute("data-delhouse"));
+          state.housePurchases = state.housePurchases.filter(function (p) { return p.id !== id; });
+          adminUI.confirmDelHouse = null; saveState(); renderAdmin(); toast("Compra borrada.");
+        });
+      });
+      el.querySelectorAll("[data-delhousecatask]").forEach(function (b) {
+        b.addEventListener("click", function () { adminUI.confirmDelHouseCat = b.getAttribute("data-delhousecatask"); renderAdmin(); });
+      });
+      el.querySelectorAll("[data-delhousecatcancel]").forEach(function (b) {
+        b.addEventListener("click", function () { adminUI.confirmDelHouseCat = null; renderAdmin(); });
+      });
+      el.querySelectorAll("[data-delhousecat]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var name = b.getAttribute("data-delhousecat");
+          state.houseCategories = state.houseCategories.filter(function (c) { return c !== name; });
+          if (state.houseCategories.length === 0) state.houseCategories = ["Otro"];
+          adminUI.confirmDelHouseCat = null; saveState(); renderAdmin(); toast("Categoría borrada.");
         });
       });
       /* ajustes */
