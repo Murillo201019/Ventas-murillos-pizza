@@ -356,6 +356,7 @@
       var cut = cutForDate(seller.cutDate || todayStr());
       if (!cut) return;
       cut.status = "abierta"; cut.countedCents = null; cut.closedAt = null;
+      seller.saleDate = cut.date;
       saveState(); renderSeller();
       toast("Caja reabierta.");
     }
@@ -425,6 +426,7 @@
       }
       if (seller.message) html += '<p class="success" role="status">' + esc(seller.message) + "</p>";
       if (!storageOK) html += '<p class="empty">Este navegador no permitió guardar en el teléfono: la venta funciona, pero los datos se perderán al cerrar. Abre la app instalada o exporta tu respaldo desde Administrador → Ajustes.</p>';
+      html += "<p style=\"font-size:12px;color:var(--dim);text-align:center;margin:18px 0 0\">Ventas Murillo's Pizza · v6</p>";
       el.innerHTML = html;
       bindSeller(el);
       var pi = $("priceInput");
@@ -1550,6 +1552,8 @@
 
     /* ================= arranque ================= */
     loadState();
+    var openCutInit = state.cashCuts.find(function (c) { return c.status === "abierta"; });
+    if (openCutInit) { seller.cutDate = openCutInit.date; seller.saleDate = openCutInit.date; }
     ui.anchor = todayStr();
     adminUI.exp.date = todayStr();
     $("navVender").addEventListener("click", function () { setMode("vender"); });
