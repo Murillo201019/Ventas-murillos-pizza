@@ -274,32 +274,33 @@
 
     /* ================= vista del vendedor ================= */
     var seller = { kind: "entera", cart: [], payment: "efectivo", editingPrice: -1, priceText: "", message: null, error: null, busy: false,
+      saleDate: todayStr(), cutDate: todayStr(),
       cut: { openAmount: "500", counted: "", err: null } };
     function cartTotal() { return seller.cart.reduce(function (a, l) { return a + l.unitPriceCents * l.qty; }, 0); }
     function cartCommission() { return seller.payment === "tarjeta" ? Math.round(cartTotal() * 0.032 * 1.16) : 0; }
-    function todaySales() {
-      var t = todayStr();
-      return state.sales.filter(function (s) { return s.saleDate === t && !s.voided; });
+    function sellerDaySales() {
+      return state.sales.filter(function (s) { return s.saleDate === seller.saleDate && !s.voided; });
     }
     /* Caja del día para el vendedor: la misma caja que ve el administrador */
     function sellerCajaHTML() {
-      var today = todayStr();
+      var today = seller.cutDate || todayStr();
       var cut = cutForDate(today);
       var day = cutDayTotals(today);
       var c = seller.cut;
-      var h = '<section class="card"><h3>Caja de hoy · ' + esc(prettyDate(today)) + "</h3>";
+      var h = '<section class="card"><h3>Caja · ' + esc(prettyDate(today)) + "</h3>" +
+        '<label class="field" style="margin-top:10px"><span>Fecha de la caja</span><input class="input" id="sellCutDate" type="date" value="' + esc(today) + '" aria-label="Fecha de la caja"></label>';
       if (!cut) {
         h += '<p style="font-size:14px;color:var(--dim);margin:6px 0 0">Antes de vender, abre la caja con el fondo inicial en efectivo.</p>' +
           '<div style="display:grid;gap:12px;margin-top:12px">' +
           '<label class="field"><span>Fondo inicial en efectivo ($)</span><input class="input" id="sellCutOpen" inputmode="decimal" value="' + esc(c.openAmount) + '" placeholder="500" aria-label="Fondo inicial en efectivo"></label>';
         if (c.err) h += '<p class="err" role="alert" style="text-align:left;margin:0">' + esc(c.err) + "</p>";
         h += '<button type="button" class="btn" id="sellCutOpenBtn" style="width:100%">Abrir caja</button></div>';
-        if (day.count > 0) h += '<p class="hint">Ya hay ' + day.count + ' venta(s) registrada(s) hoy por ' + money(day.totalCents, true) + " sin caja abierta.</p>";
+        if (day.count > 0) h += '<p class="hint">Ya hay ' + day.count + ' venta(s) registrada(s) este día por ' + money(day.totalCents, true) + " sin caja abierta.</p>";
       } else {
         var expected = expectedCash(cut);
         h += '<ul class="kv">' +
           "<li><span>Fondo inicial</span><span class=\"v tnum\">" + money(cut.openCents, true) + "</span></li>" +
-          "<li><span>Ventas de hoy</span><span class=\"v tnum\">" + money(day.totalCents, true) + " (" + day.count + ")</span></li>" +
+          "<li><span>Ventas del día</span><span class=\"v tnum\">" + money(day.totalCents, true) + " (" + day.count + ")</span></li>" +
           "<li><span>Efectivo en caja</span><span class=\"v tnum\">" + money(day.cashCents, true) + "</span></li>" +
           "<li><span>Efectivo esperado</span><span class=\"v tnum\">" + money(expected, true) + "</span></li>";
         if (cut.status === "cerrada" && cut.countedCents != null) {
@@ -323,10 +324,11 @@
     }
     function openCutSeller() {
       var c = seller.cut;
-      var today = todayStr();
+      var today = seller.cutDate || todayStr();
       var openCents = toCents($("sellCutOpen").value);
       c.err = null;
-      if (cutForDate(today)) c.err = "La caja de hoy ya está abierta.";
+      if (today > todayStr()) c.err = "La fecha de la caja no puede ser futura.";
+      else if (cutForDate(today)) c.err = "Ya hay una caja para esa fecha.";
       else if (openCents === null || openCents < 0) c.err = "Escribe el fondo inicial en efectivo (puede ser 0).";
       if (c.err) { renderSeller(); return; }
       state.cashCuts.push({ id: nid(), date: today, openCents: openCents, status: "abierta", countedCents: null, closedAt: null });
@@ -336,7 +338,7 @@
     }
     function closeCutSeller() {
       var c = seller.cut;
-      var cut = cutForDate(todayStr());
+      var cut = cutForDate(seller.cutDate || todayStr());
       if (!cut || cut.status !== "abierta") return;
       var countedText = $("sellCutCounted").value.trim();
       var counted = countedText === "" ? null : toCents(countedText);
@@ -350,7 +352,7 @@
       toast(counted == null ? "Caja cerrada." : (counted === expected ? "Caja cerrada. Efectivo exacto." : counted > expected ? "Caja cerrada. Sobran " + money(counted - expected, true) + "." : "Caja cerrada. Faltan " + money(expected - counted, true) + "."));
     }
     function reopenCutSeller() {
-      var cut = cutForDate(todayStr());
+      var cut = cutForDate(seller.cutDate || todayStr());
       if (!cut) return;
       cut.status = "abierta"; cut.countedCents = null; cut.closedAt = null;
       saveState(); renderSeller();
@@ -358,12 +360,12 @@
     }
     function renderSeller() {
       var el = $("viewVender");
-      var ts = todaySales();
+      var ts = sellerDaySales();
       var todayRev = ts.reduce(function (a, s) { return a + s.totalCents; }, 0);
       var products = state.products.filter(function (p) { return p.active; });
       var kind = seller.kind;
       var html = "";
-      html += '<section class="oven"><p class="sub">Vendido hoy · ' + esc(prettyDate(todayStr())) + " · " + ts.length + (ts.length === 1 ? " venta" : " ventas") + '</p>' +
+      html += '<section class="oven"><p class="sub">Vendido · ' + esc(prettyDate(seller.saleDate)) + " · " + ts.length + (ts.length === 1 ? " venta" : " ventas") + '</p>' +
         '<p class="big tnum">' + money(todayRev, true) + "</p></section>";
       html += sellerCajaHTML();
       html += '<div class="seg" role="group" aria-label="Tipo de venta">' +
@@ -406,6 +408,7 @@
             '<span class="line-total tnum">' + money(l.unitPriceCents * l.qty, true) + "</span></div></li>";
         });
         html += "</ul>";
+        html += '<label class="field" style="margin-top:12px"><span>Fecha de la venta</span><input class="input" id="saleDate" type="date" value="' + esc(seller.saleDate) + '" aria-label="Fecha de la venta"></label>';
         html += '<p style="margin:14px 0 0;font-size:14px;font-weight:600">¿Cómo paga el cliente?</p><div class="pay-grid" role="group" aria-label="Método de pago">';
         PAYMENTS.forEach(function (pm) {
           html += '<button type="button" data-pay="' + pm.id + '" aria-pressed="' + (seller.payment === pm.id) + '">' + pm.icon + esc(pm.label) + "</button>";
@@ -462,6 +465,10 @@
       var vaciar = $("btnVaciar");
       if (vaciar) vaciar.addEventListener("click", function () { seller.cart = []; ui.salePin = null; seller.error = null; seller.editingPrice = -1; renderSeller(); });
       /* caja del día (vendedor) */
+      var scDate = $("sellCutDate");
+      if (scDate) scDate.addEventListener("change", function () { seller.cutDate = scDate.value || todayStr(); seller.cut.err = null; renderSeller(); });
+      var sDate = $("saleDate");
+      if (sDate) sDate.addEventListener("change", function () { seller.saleDate = sDate.value || todayStr(); renderSeller(); });
       var scOpen = $("sellCutOpen");
       if (scOpen) scOpen.addEventListener("input", function () { seller.cut.openAmount = scOpen.value; });
       var scOpenBtn = $("sellCutOpenBtn");
@@ -514,6 +521,7 @@
     }
     function checkout() {
       if (seller.cart.length === 0 || seller.busy) return;
+      if ((seller.saleDate || todayStr()) > todayStr()) { seller.error = "La fecha de la venta no puede ser futura."; renderSeller(); return; }
       var hasOverride = seller.cart.some(function (l) { return l.unitPriceCents !== l.presetCents; });
       if (hasOverride && !ui.salePin && !ui.adminUnlocked) {
         if (!state.pinHash) { seller.error = "Aún no hay PIN de administrador: créalo en la sección Administrador para poder modificar precios."; renderSeller(); return; }
@@ -534,7 +542,7 @@
       });
       var hasOverride = seller.cart.some(function (l) { return l.unitPriceCents !== l.presetCents; });
       state.sales.push({
-        id: nid(), saleDate: todayStr(), totalCents: total, costCents: cost, commissionCents: commission,
+        id: nid(), saleDate: seller.saleDate || todayStr(), totalCents: total, costCents: cost, commissionCents: commission,
         paymentMethod: seller.payment, priceOverride: hasOverride, voided: false,
         createdAt: Date.now(), items: items
       });
