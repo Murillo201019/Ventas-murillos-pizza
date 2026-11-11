@@ -333,6 +333,7 @@
       if (c.err) { renderSeller(); return; }
       state.cashCuts.push({ id: nid(), date: today, openCents: openCents, status: "abierta", countedCents: null, closedAt: null });
       c.openAmount = "500"; c.counted = "";
+      seller.saleDate = today;
       saveState(); renderSeller();
       toast("Caja abierta con fondo de " + money(openCents, true) + ".");
     }
@@ -466,7 +467,7 @@
       if (vaciar) vaciar.addEventListener("click", function () { seller.cart = []; ui.salePin = null; seller.error = null; seller.editingPrice = -1; renderSeller(); });
       /* caja del día (vendedor) */
       var scDate = $("sellCutDate");
-      if (scDate) scDate.addEventListener("change", function () { seller.cutDate = scDate.value || todayStr(); seller.cut.err = null; renderSeller(); });
+      if (scDate) scDate.addEventListener("change", function () { seller.cutDate = scDate.value || todayStr(); seller.saleDate = seller.cutDate; seller.cut.err = null; renderSeller(); });
       var sDate = $("saleDate");
       if (sDate) sDate.addEventListener("change", function () { seller.saleDate = sDate.value || todayStr(); renderSeller(); });
       var scOpen = $("sellCutOpen");
